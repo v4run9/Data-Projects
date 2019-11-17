@@ -61,3 +61,30 @@ ggplot(mapping = aes(k.values, wss.values)) +
 
 # function for using elbow method (instead of the above)
 fviz_nbclust(df, kmeans, method = "wss")
+
+# compute avg silhouette for k clusters
+avg_sil <- function(k) {
+  km.res <- kmeans(df, centers = k, nstart = 25)
+  ss <- silhouette(km.res$cluster, dist(df))
+  mean(ss[,3])
+}
+
+k.values <- 2:15
+
+avg_sil_values <- map_dbl(k.values, avg_sil)
+
+ggplot(mapping = aes(k.values, avg_sil_values)) +
+  geom_point() +
+  geom_line() +
+  ylab("Avg silhouette score") +
+  xlab("Number of clusters K")
+
+# function for using avg silhouette method (instead of the above)
+fviz_nbclust(df, kmeans, method = "silhouette")
+
+# compute gap statistic
+set.seed(123)
+gap_stat <- clusGap(df, FUN = kmeans, nstart = 25, K.max = 10, B = 50)
+print(gap_stat, method = "firstmax")
+
+fviz_gap_stat(gap_stat)
