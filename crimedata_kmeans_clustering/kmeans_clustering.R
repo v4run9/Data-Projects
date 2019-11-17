@@ -1,4 +1,4 @@
-# K-Means Clustering Analysis Guide (https://uc-r.github.io/kmeans_clustering)
+# K-Means Clustering Analysis of US States Using Crime Data and Urban Population Density
 
 library(tidyverse)
 library(cluster)
