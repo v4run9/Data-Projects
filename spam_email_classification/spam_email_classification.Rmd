@@ -1,0 +1,240 @@
+---
+title: "Classifying Emails as Spam or Not Spam"
+author: "Varun Mokhashi"
+output: html_document
+---
+
+```{css, echo=F}
+.main-container {
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+}
+```
+
+
+```{r setup, include=F}
+knitr::opts_chunk$set(out.width = '1200px')
+
+# Register an inline hook to trim number of decimals
+knitr::knit_hooks$set(inline = function(x) {
+  if(class(x) != "integer")
+    x <- sprintf("%1.3f", x)
+  paste(x, collapse = ", ")
+})
+```
+
+In this exercise, we will be classifying emails as either spam or not spam. We'll build a Naive Bayes classifer as well as a logistic regression classifier and compare the performance of the two; the objective for this exercise to maximize accuracy. The [dataset](http://web.stanford.edu/class/msande226/spam.csv) we are using has 4601 rows (one per email message), each containing 48 binary features that indicate the presence of a particular word in the message and a binary outcome variable that indicates whether the message was spam. 
+
+## Loading Libraries
+```{r, message=F}
+library(tidyverse) # useful library that we'll be using to manipuate tibbles
+```
+
+
+## Loading the Data
+
+Let's split the data into train and test sets using a 75/25 split. 
+
+```{r dataload}
+df <- read.csv('http://web.stanford.edu/class/msande226/spam.csv')
+
+set.seed(123)
+
+train.ind <- sample(1:nrow(df), .75*nrow(df))
+df.train <- df[train.ind,]
+df.test <- df[-train.ind,]
+```
+
+
+
+## Naive Bayes Classifier
+
+The Bayes classifier is the theoretically optimal classifier for a given classification problem, but it requires us to know the true class-membership probabilities for the population model. Since we don't know the details of the true population model for our spam example, we'll build a Naive Bayes classifier, which makes the (naive) assumption that our features are all independent from each other. We can use Bayes Theorem to determine the probability that a message is spam, given its corresponding set of values $\vec{x}$ for the feature vector $\vec{X}$.
+
+\[P(\text{email is spam}\ |\ \vec{X} = \vec{x}) = \frac{P(\vec{X}\ =\ \vec{x}\ | \text{ email is spam}) P(\text{email is spam})}{P(\vec{X}\ =\ \vec{x})}\]
+
+Using the same rule, we have
+\[P(\text{email is not spam}\ |\ \vec{X} = \vec{x}) = \frac{P(\vec{X}\ =\ \vec{x}\ | \text{ email is not spam}) P(\text{email is not spam})}{P(\vec{X}\ =\ \vec{x})}\]
+
+We can then compare the the two probabilities and determine that a message with features $\vec{x}$ is more likely to be spam than not if $P(\text{email is spam}\ |\ \vec{X} = \vec{x}) > P(\text{email is not spam}\ |\ \vec{X} = \vec{x})$, which evaluates to 
+\[(1)\ \ \ P(\vec{X}\ =\ \vec{x}\ | \text{ email is spam}) P(\text{email is spam}) > P(\vec{X}\ =\ \vec{x}\ | \text{ email is not spam}) P(\text{email is not spam})\] 
+after we substitute in the formulas from Bayes rule above and cancel out the denominators.
+
+<br/>
+
+Now let's take a look at the first half of the comparison in formula 1 above, and in particular, the first term. Because the Naive Bayes Classifier makes the assumption that the features of our dataset are independent of each other, we can say
+\[(2)\ \ \ P(\vec{X} = \vec{x}\ |\ \text{email is spam}) = \prod_{j=1}^{48}P(X_j = x_j \ |\ \text{email is spam})\ ,\]
+where  $X_j$ indicates the $j^{th}$ feature column in our dataset. Said differently, $x_j$ will be either 0 or 1, depending on whether the word represented by $X_j$ in our dataset is present in the message. 
+
+We can do the same for the second half of formula 1, and then substitute what we get into formula 1 in order to get the formula below, which we can use to evaluate whether a given email message is more likely to be spam or not spam. 
+\[(3)\ \ \ P(\text{email is spam}) \prod_{j=1}^{48}P(X_j = x_j \ |\ \text{email is spam}) > P(\text{email is not spam}) \prod_{j=1}^{48}P(X_j = x_j \ |\ \text{email is not spam})\ .\] 
+
+
+### Implementing the Naive Bayes Classifier
+
+Now we need to convert formula 3 from the section above into a form we can use to implement our classifier in code. We'll start by taking the log of both sides, as taking the log of the probabilities a couple practical advantages that will be useful here:
+
+* **Speed:** The product rule for logarithms allows us to convert multiplication into addition. Since computing sums is easier to compute than products, taking the product of a high number of probabilities is often faster if they are presented in log form.
+
+* **Accuracy:** Due to the way in which computers approximate real numbers, numerical instability can arise when working with small probabilities. Using log probabilities improces numerical stability.
+
+<br/>
+
+After taking the log of both sides, we get a result that simplifies to the equation below. 
+\[(4)\ \ \ log(\ P(\text{email is spam})\ ) + \sum_{j=1}^{48}\ log(\ P(X_j = x_j |\ \text{email is spam})\ ) > log(\ P(\text{email is not spam})\ ) + \sum_{j=1}^{48}\ log(\ P(X_j = x_j |\ \text{email is not spam})\ ).\]
+
+This is what we'll use to implement our Naive Bayes classifier in code. We'll compute each half of the equation separately and then compare the results to each other. The first half can be represented as
+\[P1 = log(\ P(\text{email is spam})\ ) + \sum_{j=1}^{48}\ log(\ P(X_j = x_j\ |\ \text{email is spam})\ ) \\
+= log(\ P(\text{email is spam})\ ) + \sum_{j=1}^{48}\ (\ x_jlog(\ P(X_j = 1\ |\ \text{email is spam})\ )\ + (1-x_j)log(\ P(X_j = 0\ |\ \text{email is spam}))\ )\]
+
+To make this easier to implement in R, let's let $Q1 = P(\text{email is spam})$ and $q1_j = P(X_j = 1\ |\ \text{email is spam})$. 
+\[ P1 = log(\ Q1\ ) + \sum_{j=1}^{48}\ x_jlog(\ q1_j)\ + (1-x_j)log(\ 1 - q1_j )\ .\]
+
+If we let $Q0 = P(\text{email is not spam})$ and $q0_j = P(X_j = 1\ |\ \text{email is not spam})$, we can do the same thing for the second half of formula 4, which we'll denote as $P0$.
+\[ P0 = log(\ Q0\ ) + \sum_{j=1}^{48}\ x_jlog(\ q0_j)\ + (1-x_j)log(\ 1 - q0_j )\ .\]
+
+Now we're ready to write this in R! We'll compute $P1$ and $P0$ for each email message in our test set. If we find that $P1 > P0$, our classifier will classify the message is spam. Otherwise, it will classify it as not spam.
+
+<br/>
+
+Let's start by computing our estimates of $Q1$ and $Q0$ using the train set. 
+
+```{r}
+Q1 <- mean(df.train$spam) # the mean of the spam variable gives us our estimate of P(email is spam)
+Q0 <- 1 - Q1 # the probabilities Q1 and Q0 must sum to 1 since these are the only two possibilities
+```
+
+We get Q1 = `r Q1` and Q0 = `r Q0`.
+
+Next, we'll compute $q1_j = P(X_j = 1\ |\ \text{email is spam})$ and $q0_j = P(X_j = 1\ |\ \text{email is not spam})$ for all 48 features in our training data.
+
+```{r}
+# create placeholder vectors with 48 NA values
+q0 <- rep(NA, 48)
+q1 <- rep(NA, 48)
+
+q0 <- colMeans(filter(df.train, df.train$spam == 0))[1:48] # compute P(x=1 | email is not spam) for each feature in our train set
+q1 <- colMeans(filter(df.train, df.train$spam == 1))[1:48] # compute P(x=1 | email is spam) for each feature in our train set
+```
+
+Finally, we'll create a function that takes in a vector $\vec{x}$ containing the features for a single message and returns either 1 for spam or 0 for not spam. Notice that we've included a threshold parameter, which we'll come back to later.
+
+```{r}
+spamNB <- function(x, threshold = 0) {
+  P1 <- log(Q1) + sum( x*log(q1) + (1-x)*log(1 - q1) )
+  P0 <- log(Q0) + sum( x*log(q0) + (1-x)*log(1 - q0) )
+  
+  if (P1 - P0 > threshold)
+    return(1)
+  else
+    return(0)
+}
+```
+
+### Naive Bayes: Making Predictions
+
+Now that we've built our classifier, we can use it to make predictions on our test set and measure the classifier's performance. 
+
+```{r NB_eval, results="hold"}
+# use our spamNB function to predict whether each message in our test set is spam or not spam
+NBpred <- apply(df.test[,-49], 1, spamNB) 
+
+# calculate the loss for each observation, where 0 indicates the msg was correctly classified and 1 means the msg was incorrectly classified
+NBloss <- abs(NBpred - df.test[,49])
+
+# calculate the average loss over all predictions made on the test set
+NBloss.avg <- sum(NBloss) / length(NBloss)
+
+# calculate the accuracy for our NB classifier
+NB.accuracy <- ( nrow(df.test) - sum(NBloss) ) / nrow(df.test) # percentage of correct predictions
+
+paste("Average loss across test set: ", NBloss.avg)
+paste("Classification accuracy across test set: ", NB.accuracy)
+```
+
+Out of the `r nrow(df.test)` messages in our test set, our Naive Bayes classifier successfully classified `r NB.accuracy*100`% of them. Not too bad, but let's see if we can improve this score. 
+
+### Naive Bayes: Improving Performance
+
+In our initial classifier, we used a threshold value of 0. This is the theoretically optimal value for the Naive Bayes model, which makes the assumption that the features in our dataset are independent. Let's take a look at the features to see if this is a reasonable assumption.
+
+```{r}
+sort(colnames(df.train))
+```
+
+Does the presence of any of these words in an email message affect the probability that we'll find any of the other words in the message? For example, the phrase "no purchase necessary - receive free samples" - which I found in an email that was caught by my spam filter - contains the words *free* and *receive*, which are both in our set of features. It's possible that the presence of the word *free* increases our chances of also finding the word *receive* in any given message, and vice-versa. The features in our dataset are most likely not completely independent of each other, since the presence of certain words in an email message could increase or decrease the likelihood that we'll see other words
+
+Because we assumed independence of our features, it's likely that we created a biased classifier. If this is the case, different threshold values might give us a better accuracy rate. Let's use a simple grid search to evaluate values over the range -1 < threshold < 1.
+
+```{r}
+thres_vals <- seq(-1, 1, 0.1) # generate sequence of threshold values for our grid search
+
+# create function that computes the accuracy for a set of predictions on our test data
+pred_accuracy <- function(pred) {
+  loss <- abs(pred - df.test[,49]) # compare predicted values to actual values
+  accuracy <- ( nrow(df.test) - sum(loss) ) / nrow(df.test)
+  
+  return(accuracy)
+}
+
+# create a matrix to store accuracy scores for different classifier models
+accuracy.scores <- matrix(nrow = 0, ncol = 2)
+colnames(accuracy.scores) <- c("threshold", "accuracy")
+
+for (val in thres_vals) {
+  # get predictions
+  NBpredictions <- apply(df.test[,-49], 1, spamNB, threshold = val)
+  
+  # calculate accuracy of predictions
+  NBaccuracy <- pred_accuracy(NBpredictions)
+  
+  # store accuracy in matrix
+  accuracy.scores <- rbind(accuracy.scores, c(val, NBaccuracy))
+}
+
+print(accuracy.scores)
+
+```
+
+In this case, a threshold value of 0.4 or 0.5 gives us the best performance for our classifier. Let's try logistic regression next to see how it comparies to Naive Bayes.
+
+## Logistic Regression Classifier
+
+We fit a logistic regression model below using all of the features available in our training dataset.
+
+```{r}
+logmod <- glm(spam ~ ., family = "binomial", df.train) # train logistic regression model
+```
+
+### Logistic Regression: Making Predictions
+
+By default, using predict on a glm model object returns the log odds score $log(\frac{P(\text{email is spam})}{P(\text{email is not spam}})$. When the $P(\text{email is spam}) > P(\text{email is not spam})$, the log odds score returned will be greater than 0, so we'll use 0 as our default threshold value here.
+
+```{r}
+# get log odds scores for our test set
+logodds <- predict(logmod, df.test[,-49]) 
+
+# convert log odds scores into binary predications
+logpred <- logodds > 0
+```
+
+We can use the pred_accuracy() function we created to get the accuracy of the logistic regression model.
+
+```{r, results='hold'}
+# calculate accuracy of predictions
+log.accuracy <- pred_accuracy(logpred)
+
+# calculate the loss for each observation, where 0 indicates the msg was correctly classified and 1 means the msg was incorrectly classified
+logloss <- abs(logpred - df.test[,49])
+
+# calculate the average loss over all predictions made on the test set
+logloss.avg <- sum(logloss) / length(logloss)
+
+paste("Average loss across test set: ", logloss.avg)
+paste("Classification accuracy across test set: ", log.accuracy)
+```
+
+Our logistic regression model successfully classified `r log.accuracy*100`% of our test messages! 
+
+For this particular classification problem, logistic regression performed much better than Naive Bayes. This is likely because the assumptions of Naive Bayes don't hold for this particular problem.
