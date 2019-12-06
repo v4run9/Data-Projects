@@ -1,7 +1,9 @@
 ---
 title: "Classifying Emails as Spam or Not Spam"
 author: "Varun Mokhashi"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{css, echo=F}
@@ -24,7 +26,9 @@ knitr::knit_hooks$set(inline = function(x) {
 })
 ```
 
-In this exercise, we will be classifying emails as either spam or not spam. We'll build a Naive Bayes classifer as well as a logistic regression classifier and compare the performance of the two; the objective for this exercise to maximize accuracy. The [dataset](http://web.stanford.edu/class/msande226/spam.csv) we are using has 4601 rows (one per email message), each containing 48 binary features that indicate the presence of a particular word in the message and a binary outcome variable that indicates whether the message was spam. 
+In this exercise, we will be classifying emails as either spam or not spam. We'll build a Naive Bayes classifer as well as a logistic regression classifier and compare the performance of the two; the objective for this exercise to maximize accuracy. 
+
+The [dataset](http://web.stanford.edu/class/msande226/spam.csv) we are using has 4601 rows (one per email message), each containing 48 binary features that indicate the presence of a particular word in the message and a binary outcome variable that indicates whether the message was spam. 
 
 ## Loading Libraries
 ```{r, message=F}
@@ -237,4 +241,8 @@ paste("Classification accuracy across test set: ", log.accuracy)
 
 Our logistic regression model successfully classified `r log.accuracy*100`% of our test messages! 
 
-For this particular classification problem, logistic regression performed much better than Naive Bayes. This is likely because the assumptions of Naive Bayes don't hold for this particular problem.
+## Final Thoughts: Comparing Naive Bayes and Logistic Regression
+
+For this particular classification scenario, logistic regression performed much better than Naive Bayes. This is likely because the assumptions of Naive Bayes don't hold for this problem.
+
+In general, Logistic Regression tends to perform better than Naive Bayes once you have obtained enough data. On the other hand, Naive Bayes can provide better performance in scenarios where you have a limited number of data points. Take a look at this [paper](http://ai.stanford.edu/~ang/papers/nips01-discriminativegenerative.pdf) by Andrew Ng and Michael Jordon for a detailed comparison of Logistic Regression and Naive Bayes. 
